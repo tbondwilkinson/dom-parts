@@ -1,0 +1,7 @@
+{
+  "name": "dom-parts",
+  "version": "0.0.0",
+  "devDependencies": {
+    "typescript": "^4.9.5"
+  }
+}
