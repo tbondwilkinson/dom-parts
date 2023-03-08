@@ -1,58 +1,271 @@
+import {captureRejectionSymbol} from 'events';
+import {chdir} from 'process';
+
 interface PartRoot {
-  getInitialParts(): Part[];
+  getParts(): Part[];
+  cloneWithParts(): PartRoot;
 }
 
-interface DynamicPartRoot extends PartRoot {
-  // Adds a part. Does basic checking.
-  addPart(part: Part): void;
+const elementPartAttribute = '__part__';
+const elementChildNodePartParentAttribute = '__childnodepartparent__';
+const elementChildNodePartPreviousSiblingAttribute =
+    '__childnodepartprevioussibling__';
+const elementChildNodePartNextSiblingAttribute = '__childnodepartnextsibling__';
+const elementPartRootAttribute = '__partroot__';
 
-  // Removes a part.
-  removePart(part: Part): void;
+declare global {
+  interface Node {
+    // One per element
+    [elementPartAttribute]?: Part;
+    // One per previous sibling element
+    [elementChildNodePartPreviousSiblingAttribute]?: Part;
+    // One per next sibling element
+    [elementChildNodePartNextSiblingAttribute]?: Part;
+    // One per element
+    [elementPartRootAttribute]?: PartRoot;
+  }
+}
 
-  // Gets the parts, both dynamic and parsed.
-  getParts(): Part[];
+function getRootNodes(root: Document|DocumentFragment|ChildNodePart): Node[] {
+  if (root instanceof ChildNodePart) {
+    return root.children();
+  }
+  if (root instanceof Node) {
+    if (root.nodeType === Node.DOCUMENT_NODE) {
+      return [(root as Document).getRootNode()];
+    }
+    if (root.nodeType === Node.DOCUMENT_FRAGMENT_NODE) {
+      return [root];
+    }
+  }
+  return [];
+}
 
-  // Clones the root with the dynamic parts. Does checking to
-  // make sure that the parts and DOM are correct.
-  cloneWithParts(): DynamicPartRoot;
+function getPartRoot(node: Node): PartRoot|null {
+  let currentNode: Node|null = node;
+  while (currentNode !== null) {
+    if (currentNode[elementPartRootAttribute]) {
+      return currentNode[elementPartRootAttribute];
+    }
+    if (currentNode.nodeType === Node.DOCUMENT_NODE) {
+      return new DocumentPartRootPonyfill(currentNode as Document);
+    }
+    if (currentNode.nodeType === Node.DOCUMENT_FRAGMENT_NODE) {
+      return new DocumentPartRootPonyfill(currentNode as DocumentFragment);
+    }
+    currentNode = currentNode.parentNode;
+  }
+  return null;
+}
+
+
+// Wraps a Document, DocumentFragment, or ChildNodePart.
+class PartRootPonyfill implements PartRoot {
+  private parts = new Set<Part>();
+
+  constructor(root: Document|DocumentFragment|ChildNodePart) {
+    const partVisitor = new PartVisitor(this, root);
+    this.parts = partVisitor.visit();
+  }
+
+  getParts(): Part[] {
+    return [];
+  }
+  cloneWithParts(): PartRoot {
+    return this;
+  }
+}
+
+class DocumentPartRootPonyfill extends PartRootPonyfill {
+  constructor(root: Document|DocumentFragment) {
+    super(root);
+    root[elementPartRootAttribute] = this;
+  }
+}
+
+const nodePartRegex = /^\?node-part\s*(?<metadata>.*)\?$/;
+const childNodePartRegex = /^\?(?<end>\/)?child-node-part\s*(?<metadata>.*)\?$/;
+
+interface OpenChildNodePart {
+  startComment: Comment;
+  parts: Set<Part>;
+}
+
+// Visits all parts and
+class PartVisitor {
+  private visited = false;
+  private parts = new Set<Part>();
+  private openChildNodePartStack: OpenChildNodePart[] = [];
+
+  constructor(
+      private readonly partRoot: PartRootPonyfill,
+      private readonly wrappedPartRoot: Document|DocumentFragment|ChildNodePart,
+      private readonly parseComments = true) {}
+
+  visit(): Set<Part> {
+    if (this.visited) {
+      return this.parts;
+    }
+    this.visited = true;
+    for (const root of getRootNodes(this.wrappedPartRoot)) {
+      const walker = root.ownerDocument!.createTreeWalker(root);
+
+      let node: Node|null;
+      while ((node = walker.nextNode()) !== null) {
+        if (node instanceof Comment) {
+          this.visitComment(node);
+        }
+      }
+    }
+    return this.parts;
+  }
+
+  private visitComment(comment: Comment) {
+    const {data} = comment;
+
+    const nodePartMatch = data.match(nodePartRegex);
+    if (nodePartMatch) {
+      this.visitPartComment(comment, nodePartMatch.groups?.['metadata']);
+    }
+    const childNodePartMatch = data.match(childNodePartRegex);
+    if (childNodePartMatch) {
+      this.visitChildNodePartComment(
+          comment, !!childNodePartMatch.groups?.['end'],
+          childNodePartMatch.groups?.['metadata']);
+    }
+    if (data === '?node-part?') {
+      const part = new Part(this.partRoot, node.nextSibling)
+      parts.push(new Part(node));
+    } else if (data === '?child-node-part?') {
+      openChildPartStack.push({startNode: node, outerParts: parts});
+      parts = [];
+    } else if (data === '?/child-node-part?') {
+      const childPartData = openChildPartStack.pop();
+      if (childPartData === undefined) {
+        throw new Error('Unexpected end child part');
+      }
+      const childPart = new ChildPart(childPartData.startNode, node, parts);
+      (parts = childPartData.outerParts).push(childPart);
+    }
+  }
+
+  private visitPartComment(comment: Comment, parsedMetadata: string|undefined) {
+    const nextSibling = comment.nextSibling;
+    if (!nextSibling) {
+      // Needs a next sibling.
+      return;
+    }
+    nextSibling[elementPartRootAttribute] = const metadata =
+        parsedMetadata ? [parsedMetadata] : [];
+    const part = new NodePart(nextSibling, {metadata});
+    this.addPart(part);
+  }
+
+  private visitChildNodePartComment(
+      comment: Comment, end: boolean, parsedMetadata: string|undefined) {
+    if (!end) {
+      this.openChildNodePartStack.push(
+          {startComment: comment, parts: new Set()});
+    } else {
+      const openChildNodePart = this.matchChildNodePart(comment);
+      if (!openChildNodePart) {
+        // Emulating parsing behavior, no error.
+        return;
+      }
+      const part = new ChildNodePart(
+          this.partRoot,
+          comment.parentNode,
+      );
+      this.addPart();
+    }
+  }
+
+  private getPartRoot(): PartRoot {
+    if (this.openChildNodePartStack.length) {
+      return this.openChildNodePartStack[this.openChildNodePartStack.length];
+    }
+  }
+
+  private addPart(part: Part) {
+    if (this.openChildNodePartStack.length) {
+      return this.openChildNodePartStack[this.openChildNodePartStack.length]
+          .parts.add(part);
+    }
+    return this.parts.add(part);
+  }
+
+  private matchChildNodePart(endComment: Comment): OpenChildNodePart|undefined {
+    for (let i = this.openChildNodePartStack.length - 1; i >= 0; i--) {
+      const childNodePart = this.openChildNodePartStack[i];
+      if (childNodePart.startComment.parentNode === endComment.parentNode) {
+        this.openChildNodePartStack.splice(i);
+        return childNodePart;
+      }
+    }
+    return undefined;
+  }
 }
 
 interface PartInit {
-  metadata: string[];
+  metadata?: string[];
 }
 
-class Part {
+export interface Part {
+  readonly root: PartRoot;
   readonly metadata: string[];
+  readonly valid: boolean;
+}
 
-  constructor({metadata}: PartInit) {
-    this.metadata = metadata;
+export class NodePart implements Part {
+  get root() {
+    return getPartRoot(this.node)!;
+  }
+
+  readonly metadata: string[]
+
+
+  constructor(readonly node: Node, init: PartInit = {}) {
+    return
   }
 }
 
-class NodePart extends Part {
-  constructor(readonly node: Node, init: PartInit) {
-    super(init);
+class ParsedChildNodePart extends Part implements PartRoot {
+  constructor(
+      readonly previousSibling: Node|null, readonly nextSibling: Node|null,
+      parts: Part[], init?: PartInit) {
+    super()
+  }
+
+  getParts(): Part[] {
+    return [];
+  }
+  cloneWithParts(): PartRoot {
+    return this;
   }
 }
 
-class ChildNodePart extends Part implements DynamicPartRoot {
-  // Equivalent to parentElement.children with only the children
-  // in this range. This is not live, and if the underlying
-  // DOM changes, this will not update.
-  readonly parent: Node|null;
-  children: Node[];
+export class ChildNodePart extends Part implements PartRoot {
+  children(): Node[] {
+    return [];
+  }
 
-  private initialParts: Part[];
-  private parts = new Map<Node, Set<Part>>;
 
   constructor(
-      parent: Node|null, children: Node[], initialParts: Part[],
-      init: PartInit) {
+      previousSibling: Node|null, nextSibling: Node|null, init?: PartInit) {
     super(init);
     this.parent = parent;
     this.children = [];
+    this.startIndex = startIndex;
+    this.endIndex = endIndex;
+    for (let i = startIndex; i < endIndex && i < parent.childNodes.length;
+         i++) {
+      this.children.push(parent.childNodes[i]);
+    }
+
     this.initialParts = initialParts;
-    this.replace(children, initialParts);
+    for (const part of this.initialParts) {
+      this.addPart(part);
+    }
   }
 
   getInitialParts(): Part[] {
@@ -68,9 +281,6 @@ class ChildNodePart extends Part implements DynamicPartRoot {
       root = part.parent;
     } else {
       return;
-    }
-    if (root === null) {
-      throw new Error('Part is not connected to a parent');
     }
     // Make sure part is in this part, and no other.
     if (!this.contains(root)) {
@@ -96,7 +306,8 @@ class ChildNodePart extends Part implements DynamicPartRoot {
             new Set(childNodeParts.map((part) => part.children).flat());
         for (const child of part.children) {
           if (existingChildren.has(child)) {
-            throw new Error('Child is already part of another ChildNodePart');
+            throw new Error(
+                'ChildNodePart overlaps with another ChildNodePart');
           }
         }
       }
@@ -167,15 +378,29 @@ class ChildNodePart extends Part implements DynamicPartRoot {
       }
     }
     const seenParts = new Map(this.parts);
+    const documentFragment = new DocumentFragment();
     const clonedChildren: Node[] = [];
     const clonedParts: NodePart[] = [];
     for (const child of this.children) {
       const [clonedChild, clonedParts] = this.clone(child, seenParts);
+      documentFragment.appendChild(clonedChild);
       clonedChildren.push(clonedChild);
       clonedParts.push(...clonedParts);
     }
     return new ChildNodePart(
-        null, clonedChildren, clonedParts, {metadata: this.metadata});
+        documentFragment, 0, Infinity, clonedParts, {metadata: this.metadata});
+  }
+
+  syncChildren(startIndex = this.startIndex, endIndex = this.endIndex) {}
+
+  syncIndexes(children = this.children) {
+    let firstChildOffset = ;
+    for (let i = 0;
+         i < this.parent.childNodes.length && i < this.children.length; i++) {
+      const currentChild = this.parent.childNodes[i];
+      if (currentChild === children[i - firstChildOffset]) {
+      }
+    }
   }
 
   private clone(node: Node, seenParts: Map<Node, Set<Part>>):
@@ -228,6 +453,7 @@ class ChildNodePart extends Part implements DynamicPartRoot {
       if (child instanceof Node && child.parentNode &&
           child.parentNode !== this.parent) {
         throw new Error('The child is not a child');
+      } else {
       }
     }
     this.children = children.map((child) => {
