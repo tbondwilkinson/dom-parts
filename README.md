@@ -10,14 +10,15 @@ Templating systems come in many varieties, but most begin as a user-authored "te
 - [Angular templates](https://angular.io/guide/template-overview) which compile to JavaScript, but may in the future compile to `<template>` as well.
 - [Lit templates](https://lit.dev/docs/templates/overview/) which compile to `<template>` elements and JavaScript.
 
-Once the page loads with initial content, the framework performs a render or update with the compiled output of their templating languages. Some approaches are:
+Once the page loads with initial content, the framework performs a render or update with the compiled output of the templating with some dynamic data. Some approaches are:
 - Virtual DOM: The framework maintains an in-memory representation of the DOM ("virtual DOM") that it updates with JavaScript. Once the virtual DOM has been updated, it is synced with the real DOM.
-- Fragment DOM: The framework uses document fragments (<template> e.g.) as an intermediate representation of user-authored templates that it then clones and fills in with data. Updates will either generate a new fragment or update the live DOM. Lit and SolidJS use this approach, and Angular, Svelte, and Vue are interested in a similar approach.
+- Fragment DOM: The framework uses document fragments (`<template>` e.g.) as an intermediate representation of user-authored templates that it then clones and fills in with data. Updates will either generate a new fragment or update the live DOM. Lit and SolidJS use this approach, and Angular, Svelte, and Vue are interested in a similar approach.
 - Incremental DOM: The framework uses live DOM as an initial write and/or update target, and caches templating information on the DOM nodes. Soy uses this approach. The difference between this and Fragment DOM is that Incremental DOM does not have intermediate representations of DOM, such as a template, and instead uses JavaScript to directly mutate the live DOM.
+
 
 Many of these strategies require repeatedly visiting nodes that need to be mutated, or "nodes of interest." For example, immediately after cloning a `<template>` a fragment DOM approach requires walking that template replacing placeholders with additional content. For server-rendered HTML, the base HTML often needs to be enhanced with event listeners or mutated later on in the life cycle of the page.
 
-The current methodology for finding "nodes of interest" is either a full DOM tree walk or DOM queries for classes or ids. These approaches are reasonably performant, but there's an opportunity for the browser to help frameworks locate their nodes of interest.
+The current methodology for finding "nodes of interest" is either a full DOM tree walk or DOM queries for classes or ids. These approaches are reasonably performant, but there's an opportunity for the browser to help frameworks locate their nodes of interest more rapidly and with less code.
 
 ## Proposal
 
