@@ -4,7 +4,7 @@
 
 In many applications, the HTML and CSS sent to the browser in the initial HTTP response does not constitute a static or even fully rendered page. In response to user input, as a loading optimization, or for other reasons the HTML of the page is dynamically modified by JavaScript to add, remove, or update content on the page. One common approach in frameworks is to use a static template and dynamic data to render or update the content of the page.
 
-Templating systems come in many varieties. begin as a user-authored structure that is parsed on the client or compiled to JavaScript or other web primitives:
+Templating systems come in many varieties, but most begin as a user-authored "template" that is parsed on the client or compiled to JavaScript or other web primitives:
 - [React's JSX/TSX](https://reactjs.org/docs/jsx-in-depth.html) which compiles to JavaScript.
 - Google's Soy, which compiles to Java or JavaScript that can produce HTML.
 - [Angular templates](https://angular.io/guide/template-overview) which compile to JavaScript, but may in the future compile to `<template>` as well.
