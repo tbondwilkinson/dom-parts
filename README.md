@@ -56,14 +56,34 @@ interface PartRoot {
   // In-order DOM array of parts.
   getParts(): Part[];
 }
+
+class DocumentPart implements Part, PartRoot {
+  constructor(document: Document|DocumentFragment) {}
+
+  getParts(): Part[];
+
+  clone(): DocumentPart;
+}
+
+declare global {
+  interface Document {
+    getDocumentPart(): DocumentPart;
+  }
+
+  interface DocumentFragment {
+    getDocumentPart(): DocumentPart;
+  }
+}
 ```
 
 The browser does fancy bookkeeping to ensure that `getParts()` is live, but it may defer some work to actual calls, as `getElementById()` does.
 
+`DocumentPart` also has a clone method which also clones the parts.
+
 The base interfaces for all parts is:
 
 ```ts
-interface Part {
+interface HTMLPart {
   readonly root?: PartRoot;
   readonly valid: boolean;
   readonly metadata: string[];
@@ -79,7 +99,7 @@ interface Part {
 A `NodePart` is constructed for `<?node-part?>` instructions and can also be constructed imperatively.
 
 ```ts
-class NodePart implements Part {
+class NodePart implements HTMLPart {
   readonly root?: PartRoot;
   readonly valid: boolean;
   readonly metadata: string[];
@@ -95,7 +115,7 @@ class NodePart implements Part {
 A `ChildNodePart` is constructed for `<?child-node-part?>` instructions and can also be constructed imperatively.
 
 ```ts
-class ChildNodePart implements Part, PartRoot {
+class ChildNodePart implements HTMLPart, PartRoot {
   readonly root?: PartRoot;
   readonly valid: boolean;
   readonly metadata: string[];
@@ -112,6 +132,8 @@ class ChildNodePart implements Part, PartRoot {
 
   // Replaces the children and parts in this range.
   replaceChildren(...nodes: Array<Node|string>) {}
+
+  disconnect(): void;
 }
 ```
 
@@ -120,8 +142,5 @@ class ChildNodePart implements Part, PartRoot {
 Invalid `ChildNodePart` objects are still accessible in with `getParts()`, but never have children. 
 
 Unlike `NodePart`, `ChildNodePart` is also a `PartRoot` like a `Document` or `DocumentFragment`. This means that it can contain content and nodes, and can be a `PartRoot` for other parts.
-
-
-
 
 
