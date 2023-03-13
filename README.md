@@ -57,7 +57,7 @@ interface PartRoot {
   getParts(): Part[];
 }
 
-class DocumentPart implements Part, PartRoot {
+class DocumentPart implements PartRoot {
   constructor(document: Document|DocumentFragment) {}
 
   getParts(): Part[];
