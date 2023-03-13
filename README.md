@@ -138,7 +138,7 @@ class ChildNodePart implements HTMLPart, PartRoot {
 }
 ```
 
-`ChildNodePart` is constructed with `previousSibling` and `nextSibling` nodes. The validity of the `ChiildNodePart` is determined from those nodes - they must be ordered, contiguous, and non-overlapping with any other `ChildNodePart` objects.
+`ChildNodePart` is constructed with `previousSibling` and `nextSibling` nodes. The validity of the `ChildNodePart` is determined from those nodes - they must be ordered, contiguous, and non-overlapping with any other `ChildNodePart` objects.
 
 Invalid `ChildNodePart` objects are still accessible in with `getParts()`, but never have children. 
 
