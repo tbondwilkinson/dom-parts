@@ -5,7 +5,7 @@ export default {
   nodeResolve: {
     exportConditions: ['development'],
   },
-  reporters: [summaryReporter()],
+  // reporters: [summaryReporter()],
   testFramework: {
     config: {
       ui: 'bdd',

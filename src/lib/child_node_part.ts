@@ -3,7 +3,10 @@ import { getParts } from "./get_parts.js";
 import {
   childNodePartPreviousSiblingAttribute,
   childNodePartNextSiblingAttribute,
+  childNodePartOwnedChildAttribute,
 } from "./constants.js";
+import { getPartRoot } from "./get_part_root.js";
+import { PartRoot } from "./part_root.js";
 
 declare global {
   interface Node {
@@ -11,11 +14,21 @@ declare global {
     [childNodePartPreviousSiblingAttribute]?: ChildNodePart;
     // Cache ChildNodePart on next sibling node.
     [childNodePartNextSiblingAttribute]?: ChildNodePart;
+    // Cache ChildNOdePart on children.
+    [childNodePartOwnedChildAttribute]?: ChildNodePart;
   }
 }
 
 // A ChildNodePart wraps all nodes between a previousSibling and a nextSibling.
-export class ChildNodePart implements Part {
+export class ChildNodePart implements Part, PartRoot {
+  get partRoot() {
+    if (!this.connected) {
+      return undefined;
+    }
+    this.cachedPartRoot = getPartRoot(this.previousSibling);
+    return this.cachedPartRoot;
+  }
+
   // Metadata from parsing or from construction.
   readonly metadata: string[];
   // Whether the ChildNodePart has previousSibling and nextSibling that form a valid range.
@@ -23,7 +36,7 @@ export class ChildNodePart implements Part {
     if (!this.getParentsValid()) {
       this.cachedValid = false;
     } else {
-      validateChildNodeParts(this.previousSibling.parentNode!);
+      refreshChildNodeParts(this.previousSibling.parentNode!);
     }
     return this.cachedValid;
   }
@@ -32,10 +45,15 @@ export class ChildNodePart implements Part {
   // Next sibling ending this range.
   readonly nextSibling: Node;
 
+  private connected = false;
+  // Cached PartRoot, invalid if the DOM has changed.
+  private cachedPartRoot: PartRoot | undefined = undefined;
   // Cached parts, invalid if the DOM has changed.
   private cachedParts: Part[] = [];
   // Cached valid, invalid if the DOM has changed.
   private cachedValid: boolean = true;
+  // Cached owned children, invalid if the DOM has changed.
+  private cachedOwnedChildren: Node[] = [];
 
   constructor(previousSibling: Node, nextSibling: Node, init: PartInit = {}) {
     if (!previousSibling.parentNode || !nextSibling.parentNode) {
@@ -50,16 +68,23 @@ export class ChildNodePart implements Part {
     if (previousSibling.parentNode !== nextSibling.parentNode) {
       throw new Error("Previous or next sibling do not match parent");
     }
-    const prospectiveChildNodePart: ProspectiveChildNodePart = {
-      previousSibling,
-      nextSibling,
-    };
     // Visits all children of parentNode.
-    validateChildNodeParts(previousSibling.parentNode, {
-      prospectiveChildNodePart,
-    });
-    if (!prospectiveChildNodePart.valid) {
+    refreshChildNodeParts(previousSibling.parentNode);
+    const parentChildNodePart =
+      previousSibling[childNodePartOwnedChildAttribute];
+    if (parentChildNodePart !== nextSibling[childNodePartOwnedChildAttribute]) {
       throw new Error("Overlapping ChildNodePart");
+    }
+    const ownedChildren = [];
+    let child = previousSibling.nextSibling;
+    while (child && child !== nextSibling) {
+      if (child[childNodePartOwnedChildAttribute] === parentChildNodePart) {
+        ownedChildren.push(child);
+      }
+      child = child.nextSibling;
+    }
+    if (!child) {
+      throw new Error("previousSibling must precede nextSibling");
     }
 
     this.previousSibling = previousSibling;
@@ -70,13 +95,29 @@ export class ChildNodePart implements Part {
     if (init instanceof InternalChildNodePartInit) {
       this.cachedParts = init.parts;
     }
+    this.connected = true;
     previousSibling[childNodePartPreviousSiblingAttribute] = this;
     nextSibling[childNodePartNextSiblingAttribute] = this;
+    this.setCachedOwnedChildren(ownedChildren);
+    if (ownedChildren.length && parentChildNodePart) {
+      const parentCachedOwnedChildren =
+        parentChildNodePart.getCachedOwnedChildren();
+      const parentIndex = parentCachedOwnedChildren.findIndex(
+        (child) => previousSibling === child
+      );
+      parentCachedOwnedChildren.splice(parentIndex + 1, ownedChildren.length);
+    }
   }
 
   disconnect() {
+    this.connected = false;
     delete this.previousSibling[childNodePartPreviousSiblingAttribute];
     delete this.nextSibling[childNodePartPreviousSiblingAttribute];
+    for (const child of this.cachedOwnedChildren) {
+      if (child[childNodePartOwnedChildAttribute] === this) {
+        delete child[childNodePartOwnedChildAttribute];
+      }
+    }
   }
 
   getParts(): Part[] {
@@ -88,8 +129,23 @@ export class ChildNodePart implements Part {
     // For users of the polyfill, getCachedParts() returns
     // the result of the last DOM walk if you can guarantee
     // no DOM mutations have invalidated parts.
-    this.cachedParts = getParts(this.getChildren());
+    this.cachedParts = getParts(this.cachedOwnedChildren);
     return this.cachedParts;
+  }
+
+  getChildren(): Node[] {
+    if (!this.valid) {
+      return [];
+    }
+    return this.getDomChildren();
+  }
+
+  getOwnedChildren(): Node[] {
+    if (!this.valid) {
+      return [];
+    }
+    // After a valid call, cachedOwnedChildren is correct.
+    return this.cachedOwnedChildren;
   }
 
   replaceChildren(...children: Array<Node | string>) {
@@ -97,9 +153,8 @@ export class ChildNodePart implements Part {
       throw new Error("ChildNodePart is invalid");
     }
     const parent = this.previousSibling.parentNode!;
-    let sibling = this.previousSibling;
-    while (sibling && sibling !== this.nextSibling) {
-      parent.removeChild(sibling);
+    for (const child of this.getDomChildren()) {
+      parent.removeChild(child);
     }
     for (const child of children) {
       if (typeof child === "string") {
@@ -108,6 +163,10 @@ export class ChildNodePart implements Part {
         parent.insertBefore(child, this.nextSibling);
       }
     }
+  }
+
+  getCachedPartRoot(): PartRoot | undefined {
+    return this.cachedPartRoot;
   }
 
   getCachedParts(): Part[] {
@@ -126,20 +185,39 @@ export class ChildNodePart implements Part {
     return this.cachedValid;
   }
 
+  getCachedOwnedChildren(): Node[] {
+    return this.cachedOwnedChildren;
+  }
+
+  setCachedOwnedChildren(children: Node[]) {
+    for (const child of this.cachedOwnedChildren) {
+      if (child[childNodePartOwnedChildAttribute] === this) {
+        delete child[childNodePartOwnedChildAttribute];
+      }
+    }
+    this.cachedOwnedChildren = children;
+    for (const child of this.cachedOwnedChildren) {
+      child[childNodePartOwnedChildAttribute] = this;
+    }
+  }
+
+  private getDomChildren(): Node[] {
+    const children: Node[] = [];
+    for (
+      let child = this.previousSibling.nextSibling;
+      child && child !== this.nextSibling;
+      child = child.nextSibling
+    ) {
+      children.push(child);
+    }
+    return children;
+  }
+
   getParentsValid(): boolean {
     return (
       !!this.previousSibling.parentNode &&
       this.previousSibling.parentNode === this.nextSibling.parentNode
     );
-  }
-
-  private getChildren(): Node[] {
-    const roots: Node[] = [];
-    let sibling: Node = this.previousSibling;
-    while ((sibling = sibling.nextSibling!) !== this.nextSibling) {
-      roots.push(sibling);
-    }
-    return roots;
   }
 }
 
@@ -151,73 +229,48 @@ export class InternalChildNodePartInit implements PartInit {
   }
 }
 
-interface ProspectiveChildNodePart {
-  previousSibling: Node;
-  nextSibling: Node;
-  inOrder?: boolean;
-  parent?: ChildNodePart;
-  valid?: boolean;
+interface ChildNodePartStackNode {
+  childNodePart: ChildNodePart;
+  children: Node[];
 }
 
-export function validateChildNodeParts(
-  parent: Node,
-  {
-    prospectiveChildNodePart,
-  }: {
-    prospectiveChildNodePart?: ProspectiveChildNodePart;
-  } = {}
-) {
+export function refreshChildNodeParts(parent: Node) {
   // ChildNodeParts that already have a settled validation status.
   const validatedChildNodeParts = new Set<ChildNodePart>();
   // The current stack of ChildNodePart.
-  const childNodePartStack: ChildNodePart[] = [];
+  const childNodePartStack: ChildNodePartStackNode[] = [];
 
-  function setValid(childNodePart: ChildNodePart, valid: boolean) {
+  function setValid(
+    childNodePart: ChildNodePart,
+    valid: boolean,
+    children: Node[] = []
+  ) {
     childNodePart.setCachedValid(valid);
+    childNodePart.setCachedOwnedChildren(children);
     validatedChildNodeParts.add(childNodePart);
   }
 
   function validateStart(node: Node) {
-    if (
-      prospectiveChildNodePart?.previousSibling === node &&
-      prospectiveChildNodePart?.valid === undefined
-    ) {
-      // Start occurs first, store parent to make sure its the same when we
-      // find the end.
-      prospectiveChildNodePart.inOrder = true;
-      prospectiveChildNodePart.parent =
-        childNodePartStack[childNodePartStack.length - 1];
-    }
     const childNodePart = node[childNodePartPreviousSiblingAttribute];
     if (!childNodePart || validatedChildNodeParts.has(childNodePart)) {
       return;
     }
     if (childNodePart.nextSibling.parentNode !== parent) {
       // Parents mismatch.
-      setValid(childNodePart, false);
+      setValid(childNodePart, false, []);
       return;
     }
-    childNodePartStack.push(childNodePart);
+    childNodePartStack.push({ childNodePart, children: [] });
   }
 
   function validateEnd(node: Node) {
-    if (prospectiveChildNodePart?.nextSibling === node) {
-      if (prospectiveChildNodePart.inOrder === undefined) {
-        // Did not see start.
-        prospectiveChildNodePart.inOrder = false;
-        prospectiveChildNodePart.valid = false;
-      } else {
-        // Saw start, check whether parent is the same.
-        prospectiveChildNodePart.valid =
-          prospectiveChildNodePart.parent ===
-          childNodePartStack[childNodePartStack.length - 1];
-      }
-    }
     const childNodePart = node[childNodePartNextSiblingAttribute];
     if (!childNodePart || validatedChildNodeParts.has(childNodePart)) {
       return;
     }
-    const index = childNodePartStack.findIndex((cnp) => cnp === childNodePart);
+    const index = childNodePartStack.findIndex(
+      (stackNode) => stackNode.childNodePart === childNodePart
+    );
     if (index === -1) {
       // Not on the stack.
       setValid(childNodePart, false);
@@ -226,10 +279,13 @@ export function validateChildNodeParts(
     const removed = childNodePartStack.splice(index);
     if (removed.length === 1) {
       // ChildNodePart is the top-level, set valid.
-      setValid(childNodePart, true);
+      setValid(removed[0].childNodePart, true, removed[0].children);
       return;
     }
-    for (const childNodePart of removed) {
+    for (const { childNodePart, children } of removed) {
+      childNodePartStack[childNodePartStack.length - 1]?.children.push(
+        ...children
+      );
       // Overlapping ChildNodeParts.
       setValid(childNodePart, false);
     }
@@ -237,6 +293,7 @@ export function validateChildNodeParts(
 
   for (const node of parent.childNodes) {
     validateEnd(node);
+    childNodePartStack[childNodePartStack.length - 1]?.children.push(node);
     validateStart(node);
   }
 }

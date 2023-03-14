@@ -7,10 +7,12 @@ import { parseParts } from "./parse_parts.js";
 
 declare global {
   interface Document {
+    getDocumentPart(): DocumentPart;
     [documentPartAttribute]?: DocumentPart;
   }
 
   interface DocumentFragment {
+    getDocumentPart(): DocumentPart;
     [documentPartAttribute]?: DocumentPart;
   }
 }
@@ -59,3 +61,11 @@ export class DocumentPart implements PartRoot {
     delete this.document[documentPartAttribute];
   }
 }
+
+Document.prototype.getDocumentPart = function (this: Document) {
+  return getDocumentPart(this);
+};
+
+DocumentFragment.prototype.getDocumentPart = function (this: DocumentFragment) {
+  return getDocumentPart(this);
+};

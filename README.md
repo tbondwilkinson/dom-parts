@@ -2,7 +2,17 @@
 
 ## Motivation
 
-In many applications, the HTML and CSS sent to the browser in the initial HTTP response does not constitute a static or even fully rendered page. In response to user input, as a loading optimization, or for other reasons the HTML of the page is dynamically modified by JavaScript to add, remove, or update content on the page. One common approach in frameworks is to use a static template and dynamic data to render or update the content of the page.
+In many applications, JavaScript code needs to locate and mutate a set of "nodes of interest," often repeatedly. The current methodology for finding "nodes of interest" is either a full DOM tree walk or DOM queries. The browser could assist frameworks in locating and updating these nodes with new primitives that identify nodes and ranges of nodes at parse time, or by an imperative API that preserves relationships between nodes.
+
+### Hydration
+
+[Hydration](https://en.wikipedia.org/wiki/Hydration_(web_development)) takes rendered HTML from a server and enhances it with JavaScript to add event listeners that can respond to user input.
+
+In hydration, the "nodes of interest" are visited and event listeners are added.
+
+### Templating
+
+Templating systems provide a mechanism for combining static template and dynamic data to render or update the content of the page.
 
 Templating systems come in many varieties, but most begin as a user-authored "template" that is parsed on the client or compiled to JavaScript or other web primitives:
 - [React's JSX/TSX](https://reactjs.org/docs/jsx-in-depth.html) which compiles to JavaScript.
@@ -16,9 +26,7 @@ Once the page loads with initial content, the framework performs a render or upd
 - Incremental DOM: The framework uses live DOM as an initial write and/or update target, and caches templating information on the DOM nodes. Soy uses this approach. The difference between this and Fragment DOM is that Incremental DOM does not have intermediate representations of DOM, such as a template, and instead uses JavaScript to directly mutate the live DOM.
 
 
-Many of these strategies require repeatedly visiting nodes that need to be mutated, or "nodes of interest." For example, immediately after cloning a `<template>` a fragment DOM approach requires walking that template replacing placeholders with additional content. For server-rendered HTML, the base HTML often needs to be enhanced with event listeners or mutated later on in the life cycle of the page.
-
-The current methodology for finding "nodes of interest" is either a full DOM tree walk or DOM queries for classes or ids. These approaches are reasonably performant, but there's an opportunity for the browser to help frameworks locate their nodes of interest more rapidly and with less code.
+Many of these strategies require repeatedly visiting "nodes of interest." For example, immediately after cloning a `<template>` a fragment DOM approach requires walking that template replacing placeholders with additional content. For server-rendered HTML, the base HTML often needs to be enhanced with event listeners or mutated later on in the life cycle of the page.
 
 ## Proposal
 
@@ -84,7 +92,7 @@ The browser does fancy bookkeeping to ensure that `getParts()` is live, but it m
 The base interfaces for all parts is:
 
 ```ts
-interface HTMLPart {
+interface Part {
   readonly root?: PartRoot;
   readonly valid: boolean;
   readonly metadata: string[];
@@ -100,7 +108,7 @@ interface HTMLPart {
 A `NodePart` is constructed for `<?node-part?>` instructions and can also be constructed imperatively.
 
 ```ts
-class NodePart implements HTMLPart {
+class NodePart implements Part {
   readonly root?: PartRoot;
   readonly valid: boolean;
   readonly metadata: string[];
@@ -116,7 +124,7 @@ class NodePart implements HTMLPart {
 A `ChildNodePart` is constructed for `<?child-node-part?>` instructions and can also be constructed imperatively.
 
 ```ts
-class ChildNodePart implements HTMLPart, PartRoot {
+class ChildNodePart implements Part, PartRoot {
   readonly root?: PartRoot;
   readonly valid: boolean;
   readonly metadata: string[];
@@ -140,7 +148,7 @@ class ChildNodePart implements HTMLPart, PartRoot {
 
 `ChildNodePart` is constructed with `previousSibling` and `nextSibling` nodes. The validity of the `ChildNodePart` is determined from those nodes - they must be ordered, contiguous, and non-overlapping with any other `ChildNodePart` objects.
 
-Invalid `ChildNodePart` objects are still accessible in with `getParts()`, but never have children. 
+Invalid `ChildNodePart` objects are still accessible in with `getParts()`, but never have children.
 
 Unlike `NodePart`, `ChildNodePart` is also a `PartRoot` like a `Document` or `DocumentFragment`. This means that it can contain content and nodes, and can be a `PartRoot` for other parts.
 

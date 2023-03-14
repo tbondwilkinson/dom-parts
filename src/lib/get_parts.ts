@@ -12,6 +12,7 @@ export function getParts(root: Document | DocumentFragment | Node[]) {
 // Visits all parts.
 class PartGetter {
   private parts: Part[] = [];
+  private skipNodes = new Set<Node>();
 
   private readonly partValidator = new PartValidator();
 
@@ -21,25 +22,28 @@ class PartGetter {
     if (this.root instanceof Array) {
       for (const root of this.root) {
         const walker = root.ownerDocument!.createTreeWalker(root);
-
-        let node: Node | null = walker.currentNode;
-        while (node !== null) {
-          this.getPartsForNode(node, walker);
-          node = walker.nextNode();
-        }
+        this.getPartsFromWalker(walker);
       }
     } else {
       const ownerDocument = this.root.ownerDocument ?? this.root;
       const walker = ownerDocument.createTreeWalker(this.root);
-      let node: Node | null = null;
-      while ((node = walker.nextNode()) !== null) {
-        this.getPartsForNode(node, walker);
-      }
+      this.getPartsFromWalker(walker);
     }
     return this.parts;
   }
 
-  private getPartsForNode(node: Node, walker: TreeWalker) {
+  private getPartsFromWalker(walker: TreeWalker) {
+    let node: Node | null = walker.currentNode;
+    while (node != null) {
+      if (this.skipNodes.has(node)) {
+        walker.nextSibling();
+      }
+      this.getPartsForNode(node);
+      node = walker.nextNode();
+    }
+  }
+
+  private getPartsForNode(node: Node) {
     const nodePart = node[nodePartAttribute];
     if (nodePart) {
       this.parts.push(nodePart);
@@ -47,11 +51,11 @@ class PartGetter {
     const childNodePart = node[childNodePartPreviousSiblingAttribute];
     if (childNodePart) {
       if (this.partValidator.childNodePartValid(childNodePart)) {
-        let nextSibling: Node | null = node.nextSibling;
-        // Skip walking ChildNodePart since it handles its own parts.
-        while (nextSibling && nextSibling !== childNodePart.nextSibling) {
-          walker.nextSibling();
-          nextSibling = nextSibling.nextSibling;
+        let skipNode: Node | null = node.nextSibling;
+        // Skip walking roots owned by another ChildNodePart.
+        while (skipNode && skipNode !== childNodePart.nextSibling) {
+          this.skipNodes.add(skipNode);
+          skipNode = skipNode.nextSibling;
         }
       }
       this.parts.push(childNodePart);

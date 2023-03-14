@@ -1,5 +1,7 @@
 import { Part, PartInit } from "./part.js";
 import { nodePartAttribute } from "./constants.js";
+import { PartRoot } from "./part_root.js";
+import { getPartRoot } from "./get_part_root.js";
 
 // Cache the NodePart on the Node.
 declare global {
@@ -10,8 +12,21 @@ declare global {
 
 // A NodePart that marks a specific Node.
 export class NodePart implements Part {
+  get partRoot() {
+    if (!this.connected) {
+      return undefined;
+    }
+    this.cachedPartRoot = getPartRoot(this.node);
+    return this.cachedPartRoot;
+  }
+
   readonly metadata: string[];
-  readonly valid: boolean = true;
+  get valid() {
+    return this.connected;
+  }
+
+  private connected = true;
+  private cachedPartRoot: PartRoot | undefined = undefined;
 
   constructor(readonly node: Node, init: PartInit = {}) {
     if (node[nodePartAttribute]) {
@@ -26,7 +41,12 @@ export class NodePart implements Part {
     node[nodePartAttribute] = this;
   }
 
+  getCachedPartRoot() {
+    return this.cachedPartRoot;
+  }
+
   disconnect() {
+    this.connected = false;
     delete this.node[nodePartAttribute];
   }
 }

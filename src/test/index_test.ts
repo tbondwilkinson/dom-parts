@@ -40,6 +40,7 @@ describe("DOM parts", () => {
       const metadata = ["metadata"];
       const nodePart = new NodePart(node, { metadata: metadata });
       expect(nodePart.node).to.equal(node);
+      expect(nodePart.partRoot).to.be.undefined;
       expect(nodePart.metadata).to.equal(metadata);
       expect(nodePart.valid).to.be.true;
     });
@@ -55,11 +56,73 @@ describe("DOM parts", () => {
       });
       expect(childNodePart.previousSibling).to.equal(children[0]);
       expect(childNodePart.nextSibling).to.equal(children[4]);
+      expect(childNodePart.partRoot).to.be.undefined;
       expect(childNodePart.metadata).to.equal(metadata);
       expect(childNodePart.getCachedValid()).to.be.true;
       expect(childNodePart.valid).to.be.true;
       expect(childNodePart.getCachedParts()).to.deep.equal([]);
       expect(childNodePart.getParts()).to.deep.equal([]);
+      expect(childNodePart.getCachedOwnedChildren()).to.deep.equal([
+        children[1],
+        children[2],
+        children[3],
+      ]);
+      expect(childNodePart.getOwnedChildren()).to.deep.equal([
+        children[1],
+        children[2],
+        children[3],
+      ]);
+      expect(childNodePart.getChildren()).to.deep.equal([
+        children[1],
+        children[2],
+        children[3],
+      ]);
+    });
+
+    it("nested same-level ChildNodePart", () => {
+      const { children } = createDom();
+
+      const metadata = ["metadata"];
+      const childNodePart = new ChildNodePart(children[0], children[4], {
+        metadata,
+      });
+      const innerChildNodePart = new ChildNodePart(children[1], children[3]);
+      expect(childNodePart.previousSibling).to.equal(children[0]);
+      expect(childNodePart.nextSibling).to.equal(children[4]);
+      expect(childNodePart.partRoot).to.be.undefined;
+      expect(childNodePart.metadata).to.equal(metadata);
+      expect(childNodePart.getCachedValid()).to.be.true;
+      expect(childNodePart.valid).to.be.true;
+      expect(childNodePart.getCachedParts()).to.deep.equal([]);
+      expect(childNodePart.getParts()).to.deep.equal([innerChildNodePart]);
+      expect(childNodePart.getCachedOwnedChildren()).to.deep.equal([
+        children[1],
+        children[3],
+      ]);
+      expect(childNodePart.getOwnedChildren()).to.deep.equal([
+        children[1],
+        children[3],
+      ]);
+      expect(childNodePart.getChildren()).to.deep.equal([
+        children[1],
+        children[2],
+        children[3],
+      ]);
+      expect(innerChildNodePart.previousSibling).to.equal(children[1]);
+      expect(innerChildNodePart.nextSibling).to.equal(children[3]);
+      expect(innerChildNodePart.metadata).to.deep.equal([]);
+      expect(innerChildNodePart.partRoot).to.equal(childNodePart);
+      expect(innerChildNodePart.getCachedValid()).to.be.true;
+      expect(innerChildNodePart.valid).to.be.true;
+      expect(innerChildNodePart.getCachedParts()).to.deep.equal([]);
+      expect(innerChildNodePart.getParts()).to.deep.equal([]);
+      expect(innerChildNodePart.getCachedOwnedChildren()).to.deep.equal([
+        children[2],
+      ]);
+      expect(innerChildNodePart.getOwnedChildren()).to.deep.equal([
+        children[2],
+      ]);
+      expect(innerChildNodePart.getChildren()).to.deep.equal([children[2]]);
     });
 
     describe("errors on", () => {
@@ -258,6 +321,9 @@ describe("DOM parts", () => {
           nodePart2,
           nodePart3,
         ]);
+        expect(nodePart1.partRoot).to.equal(childNodePart);
+        expect(nodePart2.partRoot).to.equal(childNodePart);
+        expect(nodePart3.partRoot).to.equal(childNodePart);
 
         nodePart1.disconnect();
         expect(childNodePart.getCachedParts()).to.deep.equal([
@@ -266,16 +332,27 @@ describe("DOM parts", () => {
           nodePart3,
         ]);
         expect(childNodePart.getParts()).to.deep.equal([nodePart2, nodePart3]);
+        expect(nodePart1.partRoot).to.be.undefined;
+        expect(nodePart2.partRoot).to.equal(childNodePart);
+        expect(nodePart3.partRoot).to.equal(childNodePart);
+
         nodePart3.disconnect();
         expect(childNodePart.getCachedParts()).to.deep.equal([
           nodePart2,
           nodePart3,
         ]);
         expect(childNodePart.getParts()).to.deep.equal([nodePart2]);
+        expect(nodePart1.partRoot).to.be.undefined;
+        expect(nodePart2.partRoot).to.equal(childNodePart);
+        expect(nodePart3.partRoot).to.be.undefined;
+
         nodePart2.disconnect();
         expect(childNodePart.getCachedParts()).to.deep.equal([nodePart2]);
         expect(childNodePart.getParts()).to.deep.equal([]);
         expect(childNodePart.getCachedParts()).to.deep.equal([]);
+        expect(nodePart1.partRoot).to.be.undefined;
+        expect(nodePart2.partRoot).to.be.undefined;
+        expect(nodePart3.partRoot).to.be.undefined;
       });
 
       it("deeply nested", () => {
@@ -301,6 +378,7 @@ describe("DOM parts", () => {
         expect(childNodePart.getCachedParts()).to.deep.equal([
           nestedChildNodePart,
         ]);
+        expect(nestedChildNodePart.partRoot).to.equal(childNodePart);
         expect(nestedChildNodePart.getCachedParts()).to.deep.equal([]);
         expect(nestedChildNodePart.getParts()).to.deep.equal([]);
 
@@ -335,6 +413,14 @@ describe("DOM parts", () => {
         expect(nestedChildNodePart.getCachedParts()).to.deep.equal([nodePart2]);
         expect(nestedChildNodePart.getParts()).to.deep.equal([]);
         expect(nestedChildNodePart.getCachedParts()).to.deep.equal([]);
+
+        nestedChildNodePart.disconnect();
+        expect(childNodePart.getCachedParts()).to.deep.equal([
+          nestedChildNodePart,
+        ]);
+        expect(childNodePart.getParts()).to.deep.equal([]);
+        expect(childNodePart.getCachedParts()).to.deep.equal([]);
+        expect(nestedChildNodePart.partRoot).to.be.undefined;
       });
 
       it("preserves invalid", () => {
@@ -355,6 +441,39 @@ describe("DOM parts", () => {
         expect(nestedChildNodePart.valid).to.be.false;
         expect(childNodePart.getParts()).to.deep.equal([nestedChildNodePart]);
       });
+    });
+
+    describe("replaceChildren", () => {
+      it("replaces", () => {
+        const { children } = createDom();
+        const childNodePart = new ChildNodePart(children[0], children[4]);
+
+        const node = document.createElement("div");
+        childNodePart.replaceChildren("hello", node, "world");
+
+        const replacedChildren = childNodePart.getChildren();
+
+        const firstReplacedChild = replacedChildren[0] as Text;
+        expect(firstReplacedChild).to.be.instanceOf(Text);
+        expect(firstReplacedChild.data).to.equal("hello");
+
+        expect(replacedChildren[1]).to.equal(node);
+
+        const thirdReplacedChild = replacedChildren[2] as Text;
+        expect(thirdReplacedChild).to.be.instanceOf(Text);
+        expect(thirdReplacedChild.data).to.equal("world");
+      });
+    });
+
+    it("errors on invalid", () => {
+      const { children } = createDom();
+      const childNodePart = new ChildNodePart(children[0], children[4]);
+
+      children[0].remove();
+
+      expect(() => {
+        childNodePart.replaceChildren("error");
+      }).to.throw;
     });
   });
 
@@ -566,6 +685,9 @@ describe("DOM parts", () => {
           nodePart2,
           nodePart3,
         ]);
+        expect(nodePart1.partRoot).to.equal(documentPart);
+        expect(nodePart2.partRoot).to.equal(documentPart);
+        expect(nodePart3.partRoot).to.equal(documentPart);
 
         nodePart1.disconnect();
         expect(documentPart.getCachedParts()).to.deep.equal([
@@ -574,16 +696,27 @@ describe("DOM parts", () => {
           nodePart3,
         ]);
         expect(documentPart.getParts()).to.deep.equal([nodePart2, nodePart3]);
+        expect(nodePart1.partRoot).to.be.undefined;
+        expect(nodePart2.partRoot).to.equal(documentPart);
+        expect(nodePart3.partRoot).to.equal(documentPart);
+
         nodePart3.disconnect();
         expect(documentPart.getCachedParts()).to.deep.equal([
           nodePart2,
           nodePart3,
         ]);
         expect(documentPart.getParts()).to.deep.equal([nodePart2]);
+        expect(nodePart1.partRoot).to.be.undefined;
+        expect(nodePart2.partRoot).to.equal(documentPart);
+        expect(nodePart3.partRoot).to.be.undefined;
+
         nodePart2.disconnect();
         expect(documentPart.getCachedParts()).to.deep.equal([nodePart2]);
         expect(documentPart.getParts()).to.deep.equal([]);
         expect(documentPart.getCachedParts()).to.deep.equal([]);
+        expect(nodePart1.partRoot).to.be.undefined;
+        expect(nodePart2.partRoot).to.be.undefined;
+        expect(nodePart3.partRoot).to.be.undefined;
       });
 
       it("deeply nested", () => {
@@ -609,6 +742,7 @@ describe("DOM parts", () => {
         expect(documentPart.getCachedParts()).to.deep.equal([
           nestedChildNodePart,
         ]);
+        expect(nestedChildNodePart.partRoot).to.equal(documentPart);
         expect(nestedChildNodePart.getCachedParts()).to.deep.equal([]);
         expect(nestedChildNodePart.getParts()).to.deep.equal([]);
 
@@ -643,6 +777,9 @@ describe("DOM parts", () => {
         expect(nestedChildNodePart.getCachedParts()).to.deep.equal([nodePart2]);
         expect(nestedChildNodePart.getParts()).to.deep.equal([]);
         expect(nestedChildNodePart.getCachedParts()).to.deep.equal([]);
+
+        nestedChildNodePart.disconnect();
+        expect(nestedChildNodePart.partRoot).to.be.undefined;
       });
     });
 
@@ -704,6 +841,61 @@ describe("DOM parts", () => {
           "child-node-next2-metadata",
         ]);
         expect(part3.getCachedParts()).to.deep.equal([]);
+      });
+
+      it("removes invalid", () => {
+        document.body.innerHTML =
+          "<?node-part parent-node-metadata?><div id='parent'>" +
+          "<?child-node-part child-node-previous1-metadata?>" +
+          "<div id='child1'></div>" +
+          "<?node-part child2-node-metadata?><div id='child2'></div>" +
+          "<?/child-node-part child-node-next1-metadata?>" +
+          "<?child-node-part child-node-previous2-metadata?>" +
+          "<div id='child3'></div>" +
+          "<?/child-node-part child-node-next2-metadata?>" +
+          "</div>";
+
+        documentPart = getDocumentPart(document);
+        const parts = documentPart.getCachedParts();
+
+        const childNodePart = parts[2] as ChildNodePart;
+        childNodePart.previousSibling.parentNode!.removeChild(
+          childNodePart.previousSibling
+        );
+        expect(childNodePart.valid).to.be.false;
+
+        const documentPartClone = documentPart.clone();
+        const documentClone = documentPartClone.document;
+
+        const parentEl = documentClone.getElementById("parent")!;
+        const child1El = documentClone.getElementById("child1")!;
+        const child2El = documentClone.getElementById("child2")!;
+
+        const clonedParts = documentPartClone.getCachedParts();
+        expect(clonedParts.length).to.equal(2);
+        const part1 = clonedParts[0] as NodePart;
+        expect(part1).to.be.instanceOf(NodePart);
+        expect(part1.node).to.equal(parentEl);
+        expect(part1.valid).to.be.true;
+        expect(part1.metadata).to.deep.equal(["parent-node-metadata"]);
+
+        const part2 = clonedParts[1] as ChildNodePart;
+        expect(part2).to.be.instanceof(ChildNodePart);
+        expect(part2.previousSibling).to.equal(child1El.previousSibling);
+        expect(part2.nextSibling).to.equal(child2El.nextSibling);
+        expect(part2.getCachedValid()).to.be.true;
+        expect(part2.metadata).to.deep.equal([
+          "child-node-previous1-metadata",
+          "child-node-next1-metadata",
+        ]);
+
+        const nestedParts = part2.getCachedParts();
+        expect(nestedParts.length).to.equal(1);
+        const nestedPart1 = nestedParts[0] as NodePart;
+        expect(nestedPart1).to.be.instanceof(NodePart);
+        expect(nestedPart1.node).to.equal(child2El);
+        expect(nestedPart1.valid).to.be.true;
+        expect(nestedPart1.metadata).to.deep.equal(["child2-node-metadata"]);
       });
     });
   });
