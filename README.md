@@ -1,38 +1,46 @@
 # DOM Parts Proposal
 
-## Motivation
+## Uses Cases
 
-In many applications, JavaScript code needs to locate and mutate a set of "nodes of interest," often repeatedly. The current methodology for finding "nodes of interest" is either a full DOM tree walk or DOM queries. The browser could assist frameworks in locating and updating these nodes with new primitives that identify nodes and ranges of nodes at parse time, or by an imperative API that preserves relationships between nodes.
+In many applications, JavaScript code needs to locate and mutate a set of "nodes of interest." The current methodology for finding "nodes of interest" is either a full DOM tree walk or DOM queries, and then retaining them with in-memory JavaScript caching.
+
+The browser could assist in locating, storing, and updating these nodes with new primitives that identify nodes and ranges of nodes at parse time and an imperative API to retrieve, walk, and update these nodes.
 
 ### Hydration
 
-[Hydration](https://en.wikipedia.org/wiki/Hydration_(web_development)) takes rendered HTML from a server and enhances it with JavaScript to add event listeners that can respond to user input.
+[Hydration](<https://en.wikipedia.org/wiki/Hydration_(web_development)>) takes rendered HTML from a server and enhances it with JavaScript to add event listeners that can respond to user input.
 
 In hydration, the "nodes of interest" are visited and event listeners are added.
 
-### Templating
+#### Google Wiz
 
-Templating systems provide a mechanism for combining static template and dynamic data to render or update the content of the page.
+The internal Web framework at Google, Wiz, does light hydration on server-side rendered HTML. As part of this, it looks for controller attributes that annotate JavaScript that needs to be downloaded for the page to become interactive and it annotates elements that the controller will be interested in mutating either as part of rendering or in response to interaction.
 
-Templating systems come in many varieties, but most begin as a user-authored "template" that is parsed on the client or compiled to JavaScript or other web primitives:
-- [React's JSX/TSX](https://reactjs.org/docs/jsx-in-depth.html) which compiles to JavaScript.
-- Google's Soy, which compiles to Java or JavaScript that can produce HTML.
-- [Angular templates](https://angular.io/guide/template-overview) which compile to JavaScript, but may in the future compile to `<template>` as well.
-- [Lit templates](https://lit.dev/docs/templates/overview/) which compile to `<template>` elements and JavaScript.
+The nodes of interest are annotated with attributes like `jsaction`, `jscontroller`, and `jsname` and they are retrieved via DOM walks and queries.
 
-Once the page loads with initial content, the framework performs a render or update with the compiled output of the templating with some dynamic data. Some approaches are:
-- Virtual DOM: The framework maintains an in-memory representation of the DOM ("virtual DOM") that it updates with JavaScript. Once the virtual DOM has been updated, it is synced with the real DOM.
-- Fragment DOM: The framework uses document fragments (`<template>` e.g.) as an intermediate representation of user-authored templates that it then clones and fills in with data. Updates will either generate a new fragment or update the live DOM. Lit and SolidJS use this approach, and Angular, Svelte, and Vue are interested in a similar approach.
-- Incremental DOM: The framework uses live DOM as an initial write and/or update target, and caches templating information on the DOM nodes. Soy uses this approach. The difference between this and Fragment DOM is that Incremental DOM does not have intermediate representations of DOM, such as a template, and instead uses JavaScript to directly mutate the live DOM.
+### Client-side Rendering
 
+Many modern frameworks finish rendering an application on the client after the initial page load, or do a follow-up re-render of a part of the application in response to user interaction or data changes.
 
-Many of these strategies require repeatedly visiting "nodes of interest." For example, immediately after cloning a `<template>` a fragment DOM approach requires walking that template replacing placeholders with additional content. For server-rendered HTML, the base HTML often needs to be enhanced with event listeners or mutated later on in the life cycle of the page.
+#### `<template>` based rendering
+
+Frameworks like Lit use `<template>` to represent the static parts of a rendered chunk of content. With Lit, the `<template>` is populated with content that is attributed with placeholder attributes and comments. Then the framework clones the `<template>` content and walks the clone looking for those placeholders to update. The frameowrk stores pointers to the nodes where it found placeholders so that it can later use that to optimally update the content in response to data changes.
+
+Other frameworks like Angular are interested in a `<template>` cloning approach to rendering clientside DOM.
+
+### Other querying needs
+
+Other hydration and rendering strategies may also benefit from having a new way of querying nodes besides with a selector. Current strategies have some drawbacks: there is the possibility of conflicting `id` elements, and there's no way to query quickly for ranges of nodes.
+
+### Further extensions
+
+There are other possible extensions of this API that take advantage of a browser-based node or range identifier, for instance for inserting content that is streamed later in a response into placeholder locations declaratively to speed up displaying more important content.
 
 ## Proposal
 
 ### Overview
 
-Processing instructions will allow caching nodes of interest during parsing. An imperative API will allow maintaining a live tree of nodes of interest in the DOM. The imperative API is a modification/addition to the original [DOM Parts proposal](https://github.com/rniwa/webcomponents/blob/add-dom-parts-proposal/proposals/DOM-Parts.md).
+Processing instructions will allow caching nodes of interest during parsing. An imperative API will allow maintaining a live tree of nodes of interest in the DOM. The imperative API is a modification/addition to the original [DOM Parts proposal](https://github.com/WICG/webcomponents/blob/gh-pages/proposals/DOM-Parts.md). For information on how this proopsal differs from the original DOM Parts proposal, [see this explainer](./dom_parts_differences.md).
 
 ### Processing Instructions
 
@@ -44,15 +52,15 @@ This proposal introduces two new processing instructions. An example:
 ```html
 <html>
   <section>
-    <h1 id="name">
-      <?child-node-part?><?/child-node-part?>
-    </h1>
-    Email: <?node-part metadata?><a id="link"></a>
+    <h1 id="name"><?child-node-part?><?/child-node-part?></h1>
+    Email:
+    <?node-part metadata?><a id="link"></a>
   </section>
 </html>
 ```
 
 There are two ways to identify parts:
+
 - `<?node-part?>` which creates a part attached to the next sibling node.
 - `<?child-node-part?>` which begins a part `<?/child-node-part?>` which ends the part and can optionally wrap content.
 
@@ -99,8 +107,6 @@ interface Part {
 
   disconnect(): void;
 }
-
-
 ```
 
 `root` is a pointer to the `PartRoot` this part is in. `valid` is whether or not the `Part` is valid, `metadata` is additional parsing metadata attached to the `Part`. `disconnect()` removes the Part from its root.
@@ -115,7 +121,7 @@ class NodePart implements Part {
 
   readonly node: Node;
 
-  constructor(node: Node, init: {metadata?: string[]} = {}) {}
+  constructor(node: Node, init: { metadata?: string[] } = {}) {}
 
   disconnect(): void;
 }
@@ -132,7 +138,11 @@ class ChildNodePart implements Part, PartRoot {
   readonly previousSibling: Node;
   readonly nextSibling: Node;
 
-  constructor(previousSibling: Node, nextSibling: Node, init: {metadata?: string[]} = {}) {}
+  constructor(
+    previousSibling: Node,
+    nextSibling: Node,
+    init: { metadata?: string[] } = {}
+  ) {}
 
   children(): Node[] {}
 
@@ -140,7 +150,7 @@ class ChildNodePart implements Part, PartRoot {
   getParts(): Part[] {}
 
   // Replaces the children and parts in this range.
-  replaceChildren(...nodes: Array<Node|string>) {}
+  replaceChildren(...nodes: Array<Node | string>) {}
 
   disconnect(): void;
 }
@@ -151,5 +161,3 @@ class ChildNodePart implements Part, PartRoot {
 Invalid `ChildNodePart` objects are still accessible in with `getParts()`, but never have children.
 
 Unlike `NodePart`, `ChildNodePart` is also a `PartRoot` like a `Document` or `DocumentFragment`. This means that it can contain content and nodes, and can be a `PartRoot` for other parts.
-
-
