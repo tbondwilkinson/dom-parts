@@ -66,16 +66,41 @@ There are two ways to identify parts:
 
 ### Imperative API
 
-Once parsed, these parts are contained in `PartRoot` objects, which are accessible off of `Document` or `DocumentFragment` nodes.
+#### Example
 
 ```js
+// To retrieve the active list of parts, parsed from HTML or imperatively.
+const documentPart = document.getDocumentPart();
+const parts = documentPart.getParts();
+
+// If you want to add a new part
+const nodePart = new NodePart(document.getElementById("your-element"));
+
+// Or a ChildNodePart
+const childNodePart = new ChildNodePart(
+  nodePart.node.children[3],
+  nodePart.node.children[5]
+);
+
+// This part would appear in childNodePart's parts, rather than the document part.
+const nestedNodePart = new NodePart(nodePart.node.children[4]);
+
+// Updated to reflect the new imperatively added parts.
+const updatedParts = documentPart.getParts();
+```
+
+#### Details
+
+Once parsed, these parts are contained in `PartRoot` objects, which are accessible off of `Document` or `DocumentFragment` nodes.
+
+```ts
 interface PartRoot {
   // In-order DOM array of parts.
   getParts(): Part[];
 }
 
 class DocumentPart implements PartRoot {
-  constructor(document: Document|DocumentFragment) {}
+  constructor(document: Document | DocumentFragment) {}
 
   getParts(): Part[];
 
