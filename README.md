@@ -127,21 +127,19 @@ The base interfaces for all parts is:
 ```ts
 interface Part {
   readonly root?: PartRoot;
-  readonly valid: boolean;
   readonly metadata: string[];
 
   disconnect(): void;
 }
 ```
 
-`root` is a pointer to the `PartRoot` this part is in. `valid` is whether or not the `Part` is valid, `metadata` is additional parsing metadata attached to the `Part`. `disconnect()` removes the Part from its root.
+`root` is a pointer to the `PartRoot` this part is in. `metadata` is additional parsing metadata attached to the `Part`. `disconnect()` removes the Part from its root.
 
 A `NodePart` is constructed for `<?node-part?>` instructions and can also be constructed imperatively.
 
 ```ts
 class NodePart implements Part {
   readonly root?: PartRoot;
-  readonly valid: boolean;
   readonly metadata: string[];
 
   readonly node: Node;
@@ -157,7 +155,6 @@ A `ChildNodePart` is constructed for `<?child-node-part?>` instructions and can 
 ```ts
 class ChildNodePart implements Part, PartRoot {
   readonly root?: PartRoot;
-  readonly valid: boolean;
   readonly metadata: string[];
 
   readonly previousSibling: Node;
