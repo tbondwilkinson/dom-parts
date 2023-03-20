@@ -40,7 +40,7 @@ There are other possible extensions of this API that take advantage of a browser
 
 ### Overview
 
-Processing instructions will allow caching nodes of interest during parsing. An imperative API will allow maintaining a live tree of nodes of interest in the DOM. The imperative API is a modification/addition to the original [DOM Parts proposal](https://github.com/WICG/webcomponents/blob/gh-pages/proposals/DOM-Parts.md). For information on how this proopsal differs from the original DOM Parts proposal, [see this explainer](./dom_parts_differences.md).
+Processing instructions will allow caching nodes of interest during parsing. An imperative API will allow maintaining a live tree of nodes of interest in the DOM. The imperative API is a modification/addition to the original [DOM Parts proposal](https://github.com/WICG/webcomponents/blob/gh-pages/proposals/DOM-Parts.md). For information on how this proopsal differs from the original DOM Parts proposal, [see this explainer](./dom_parts_differences.md). For information about the polyfill, [see this explainer](./polyfill.md).
 
 ### Processing Instructions
 
