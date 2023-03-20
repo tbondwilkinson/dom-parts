@@ -6,11 +6,44 @@ In order to keep the `Part` objects up to date with the DOM, the browser needs t
 
 For each node there should be a few extra fields:
 
-1. A link to a `NodePart`, if any.
-2. A `previousSibling` link to a `ChildNodePart`. This is the `Node` that begins, but is not included in, a `ChildNodePart` range.
-3. A `nextSibling` link to a `ChildNodePart`. This is the `Node` that ends, but is not included in, a `ChildNodePart` range.
-4. A `root` link to a `ChildNodePart`. This is the siblings in between `previousSibling` and `nextSibling` `Node` that are not in between some other `previousSibling` and `nextSibling` nodes. This is useful to locate the `PartRoot` of a node, when iterating up through the DOM. Otherwise a new `Node` may not locate the `ChildNodePart` that it belongs to.
+1. A link to a `NodePart`, if any. This is used to locate `Part` objects when a `PartRoot` needs to update its parts.
+2. A `previousSibling` link to a `ChildNodePart`. This is the `Node` that begins, but is not included in, a `ChildNodePart` range. This is used to locate `Part` objects and to determine whether two `ChildNodePart` ranges overlap.
+3. A `nextSibling` link to a `ChildNodePart`. This is the `Node` that ends, but is not included in, a `ChildNodePart` range. This is used to locate `Part` objects and to determine whether two `ChildNodePart` ranges overlap.
+4. A `root` link to a `ChildNodePart`. This is the siblings in between `previousSibling` and `nextSibling` `Node` that are not in between some other `previousSibling` and `nextSibling` nodes. This is useful to locate the `PartRoot` of a node, when iterating up through the DOM. Otherwise a new `Node` may not locate the `ChildNodePart` that it belongs to. It is only present on the top-level siblings of a `ChildNodePart`.
 5. A link to a `DocumentPart` for a `Document` or `DocumentFragment`.
+
+## getParts()
+
+`getParts()` is a cached DOM-order list of parts that can be marked as dirty whenever a node is inserted with a `Part` object whose relative location in its `PartRoot` parent is unknown. The easiest algorithm to order `Part` objects is to do a DOM traversal, but it's possible instead to start with `Part` objects and do parent walks to adjacent children, which significantly reduces the amount of nodes that need to be walked - only parents of `Part` objects and siblings.
+
+## `.partRoot`
+
+`.partRoot` is a dynamic parent walk to locate the parent `PartRoot`. It's expected that most operations will do child part walks rather than parent walks. To search for a parent `PartRoot`, walk the nodes looking for either a `root` link to a `ChildNodePart` or a `DocumentPart`.
+
+## Validity checking `ChildNodePart`
+
+`ChildNodePart` objects have various validity requirements:
+
+1. `previousSibling` and `nextSibling` are connected nodes.
+2. `previousSibling` and `nextSibling` have the same parent node.
+3. `previousSibling` precedes `nextSibling`.
+4. The `ChildNodePart` does not intersect with any other `ChildNodePart` range.
+
+Given a set of `ChildNodePart` objects, it's possible to do validity checking by doing constant time checks for #1 and #2, and then iterating over all nodes between `previousSibling` and `nextSibling` to both checks for contiguousness and non-overlapping. The links for `previousSibling` and `nextSibling` can be used to locate if two `ChildNodePart` ranges overlap. If two `ChildNodePart` ranges overlap, both are invalid.
+
+The process of checking validity and updating nodes is as follows:
+
+1. Take all `ChildNodePart` objects and check them for connectedness and parent equivalence. If either check is invalid, mark the `ChildNodePart` as invalid.
+2. For all `ChildNodePart` objects that remain, separate them into lists by parent. For each parent, iterate over all children. It's possible as an optimization to only iterate over `ChildNodePart` ranges by starting with some `previousSibling` and iterating forward, repeatedly until all `ChildNodePart` objects have been found. If a `previousSibling` or `nextSibling` link is found for a `ChildNodePart` that was not originally in the set of `ChildNodePart` objects, add it in and do validity checking for it.
+3. For any `root` marked nodes, remove the `root` field, as these will be re-added at the end.
+4. If any `ChildNodePart` ends prematurely (before a child `ChildNodePart` ends), this and all open `ChildNodePart` objects are also invalid.
+5. If a `ChildNodePart` `nextSibling` is found before its `previousSibling`, it is invalid.
+6. If the iteration reaches the end of the children list and some `ChildNodePart` is still open, it is invalid.
+7. For all invalid `ChildNodePart` objects with children, remove all children and mark the parent `PartRoot` part list as dirty, as it may now own the child parts of this now invalid `ChildNodePart`.
+8. For all valid `ChildNodePart` objects, walk the adjacent siblings adding back in the `root` field.
+9. For any newly valid `ChildNodePart` objects, mark the part list as dirty.
+
+In all, this visits every child of a parent with some `ChildNodePart` twice - once for validity, and once for the `root` field.
 
 ## DOM Mutations
 
@@ -26,19 +59,15 @@ For every node being disconnected, check whether it has one of the above extra `
 
 For every node being connected, check whether it has one of the above extra `Node` fields.
 
-1. If it has a `NodePart` and that part is disconnected, connect the `NodePart` which adds it to the `PartRoot` parts. Mark the `PartRoot` parts for re-ordering, so that next time `getParts()` is called a DOM walk will happen to re-order the parts.
-2. If it has a `previousSibling` or `nextSibling` link to a `ChildNodePart`, do:
-   1. If it's connected, take no action. This can happen if an entire subtree gets added together with parts and their structures.
-   2. If `previousSibling` and `nextSibling` are not both connected or do not share the same parent, add it to the parent's `PartRoot` parts but do not mark for re-ordering since it is invalid, and invalid parts should be filtered.
-   3. Check to see whether this range newly invalidates any other `ChildNodePart` ranges by iterating the siblings between `previousSibling` and `nextSibling` looking for `ChildNodePart` links. If links are found, invalidate any found `ChildNodePart` as well as this one, and adopt child parts into the `PartRoot` with a splice, as in the node removal case.
-   4. If it's valid, connect the `ChildNodePart` which addds it to the `PartRoot` parts. Mark the `PartRoot` parts for re-ordering, so that next time `getParts()` is called a DOM walk will happen to re-order the parts. Walk the next siblings of `previousSibling` and previous siblings of `nextSibling` adding `root` links, until some other `Node` with a `root` link is found.
+1. If it has a `NodePart` and that part is currently disconnected, connect the `NodePart` which adds it to the `PartRoot` parts. Mark the `PartRoot` parts list as dirty.
+2. If it has a `previousSibling` or `nextSibling` link to a `ChildNodePart`, add that `ChildPartRoot` to a list to perform validity checking.
 
-On `Node` addition it's difficult to tell where a `Part` should be added in the `PartRoot` parts list, so the browser defers that work. As a result, `Node` additions with `Part` objects should be avoided as they could invalidate.
+Finally, run validity checking on the `ChildNodePart` objects that were found in #2. This may visit every `ChildNodePart` sibling at most twice more.
 
-### On Part construction
+## On Part construction
 
 `Part` construction runs the same `Node` addition algorithm, except that if the `Part` is invalid the constructor throws and takes no action.
 
-## Other options
+The drawback of a dynamic `Part` list and dirty checking is that for code that is already doing a DOM walk and constructed a series of parts, the code may know precisely where to insert the additional `Part`. If this is a common use case, it may make sense to have some other API like a `TreeWalker` that allows for `Part` creation in a more optimized manner where the ordering of `Part` objects can be guaranteed during the DOM walk, similar to how the parser does it.
 
-Rather than storing a single part list at the root where the `PartRoot` is, each `Node` could have a partial part list for it and its subtree, such that adding a new `Part` only needs to do a parent walk and can know precisely where to insert the `Part` based on adjacent `Node` partial part lists by looking at the children of each node in its parent walk. This removes the cache invalidation but explodes the amount of storage. Storage could be optimized, for instance storing start and end indexes of parts at each node, rather than all subtree parts, but it still has more memory cost than a cached part list.
+If DOM-order is not important, there may be a separate API that couuld be provided that would not be as expensive, because it's easier to keep a list of parts in arbitrary order than it is to keep a list of parts in DOM order.
