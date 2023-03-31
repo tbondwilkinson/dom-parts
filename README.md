@@ -2,45 +2,98 @@
 
 ## Uses Cases
 
-In many applications, JavaScript code needs to locate and mutate a set of "nodes of interest." The current methodology for finding "nodes of interest" is either a full DOM tree walk or DOM queries, and then retaining them with in-memory JavaScript caching.
+In many applications and frameworks, JavaScript code needs to locate and mutate a set of "nodes of interest." The current methodology for finding "nodes of interest" is either a full DOM tree walk or DOM queries, and for updating either that walk is repeated or the "nodes of interest" are then retained in JavaScript data structures or as properties on the DOM objects.
+
+There are two major drawbacks to these solutions:
+
+1. DOM mutating methods like `clone()` are not aware of in-memory refereces to cloned nodes or special JavaScript properties. They can only clone the HTML content itself.
+1. The DOM walks for locating nodes often occur immediately after the browser has already performed that same DOM walk, for example during HTML rendering of the document or `<template>` nodes.
 
 The browser could assist in locating, storing, and updating these nodes with new primitives that identify nodes and ranges of nodes at parse time and an imperative API to retrieve, walk, and update these nodes.
 
-### Hydration
+**Summary of Use Cases**
 
-[Hydration](<https://en.wikipedia.org/wiki/Hydration_(web_development)>) takes rendered HTML from a server and enhances it with JavaScript to add event listeners that can respond to user input.
+**Template-based Client-side Rendering**: Locating nodes in cloned HTML
 
-In hydration, the "nodes of interest" are visited and event listeners are added.
+- **Lit**: Visits placeholders in `<template>` cloned content.
+- **SolidJS**: Visits placeholders in `<template>` cloned content.
+- **Angular**: Interested in Lit + SolidJS approach
+- **Wiz (Google Internal)**: Interested in Lit + SolidJS approach
 
-#### Google Wiz
+**Updating DOM with new data**: With a list of nodes, walks just the tree of nodes that need to be updated and fills them with data
 
-The internal Web framework at Google, Wiz, does light hydration on server-side rendered HTML. As part of this, it looks for controller attributes that annotate JavaScript that needs to be downloaded for the page to become interactive and it annotates elements that the controller will be interested in mutating either as part of rendering or in response to interaction.
+- **Lit**: Visits cached parts of the DOM
+- **Wiz (Google Internal)**: Idom could walk just nodes that need to change, rather than the entire tree.
+- **Vue, Svelte, React, others**: Most frameworks preserve a node pointer and use that to update content.
 
-The nodes of interest are annotated with attributes like `jsaction`, `jscontroller`, and `jsname` and they are retrieved via DOM walks and queries.
+**Server-side Rendering**: Locating nodes in main document HTML
 
-### Client-side Rendering
+- **Hydration (Vue, Svelte)**: Needs to visit DOM nodes to add event listeners, then same use case as template-based client-side rendering. Some frameworks like Qwik only hydrate parts of the page that have interaction.
+- **Wiz (Google Internal)**: Locates jscontroller tagged nodes. Locates jsname tagged nodes for jscontrollers.
 
-Many modern frameworks finish rendering an application on the client after the initial page load, or do a follow-up re-render of a part of the application in response to user interaction or data changes.
+**Deferred Server-side Rendering**: Declaratively marking locations to be used to later slot in content.
 
-#### `<template>` based rendering
+- **React**: Identify a location in the DOM that content that is rendered later should be automatically inserted into.
+- **Deferred Rendering (Google Search)**: Identify a location in the DOM that content that is rendered later should be automatically inserted into the page, (display: none content, e.g.).
 
-Frameworks like Lit use `<template>` to represent the static parts of a rendered chunk of content. With Lit, the `<template>` is populated with content that is attributed with placeholder attributes and comments. Then the framework clones the `<template>` content and walks the clone looking for those placeholders to update. The frameowrk stores pointers to the nodes where it found placeholders so that it can later use that to optimally update the content in response to data changes.
+**Component Representation**: Representing components that do not have a clear reprensetation in the DOM.
 
-Other frameworks like Angular are interested in a `<template>` cloning approach to rendering clientside DOM.
+- **React**: A component may not be rooted with a single element root and may instead be rooted with 0 or more top-level nodes. No way to represent this in HTML and get behaviors like event listening, DOM measurement.
+- **Wiz (Google Internal)**: Component ownership may skip into child components (comparable to `<template>` slots).
 
-### Other querying needs
+## Requirements
 
-Other hydration and rendering strategies may also benefit from having a new way of querying nodes besides with a selector. Current strategies have some drawbacks: there is the possibility of conflicting `id` elements, and there's no way to query quickly for ranges of nodes.
+These are the requirements for a new browser API that solved the above use cases:
 
-### Further extensions
-
-There are other possible extensions of this API that take advantage of a browser-based node or range identifier, for instance for inserting content that is streamed later in a response into placeholder locations declaratively to speed up displaying more important content.
+1. Markers are preserved and cloned with a DOM clone.
+1. Markers are preserved after DOM mutations.
+1. Markers are fast to find using an imperative API.
+1. Markers enable updates to the DOM that are fast.
+1. Markers can mark a single node.
+1. Markers can mark a range of characters within a node.
+1. Markers can mark a range of sibling nodes.
+1. Markers can mark attributes.
+1. Markers can mark a range of characters within an attribute.
+1. Markers can be nested and have hierarchy, and have 1 parent and 0 or more children.
+1. Markers do not affect rendering.
+1. Markers do not affect tree hierarchy.
+1. Markers can be declaratively created with HTML.
+   1. The HTML to create a marker must be emittable by servers using HTML-compliant serializers.
+   1. The HTML to create a marker must not introduce a new document mode for HTML.
+   1. There should be only one syntax for declaratively creating a marker.
+   1. The HTML to create a marker is "universal", and can be output inside or outside of tags.
+   1. The HTML to create a marker is ergonomic and directly writable by developers.
+   1. The browser can use declaratively created HTML markers for other APIs, such as deferred DOM.
+1. Markers can be imperatively created with JavaScript.
 
 ## Proposal
 
+The below DOM parts proposal uses "parts" as the markers into the DOM and satisfies some of the requirements.
+
+1. There is a new clone API that preserves DOM parts.
+1. The browser keeps DOM parts alive as long as the elements they mark are alive.
+1. _DOM parts are accessible from the document, but it's not always constant time because the browser would defer determining DOM order of parts until the first access._
+1. _DOM parts enable accessing DOM nodes, so it's as fast as a normal DOM update, but not faster._
+1. `NodePart` marks a single node.
+1. `NodePart` can mark a text node and `ChildNodePart` could wrap a text node(s).
+1. `ChildNodePart` marks a range of sibling nodes.
+1. **There is no ability to mark attributes.**
+1. **There is no ability to mark a range of characters within an attribute.**
+1. `ChildNodePart` contains parts, as does `DocumentPart`.
+1. DOM parts produce comments, which do not affect rendering.
+1. DOM parts produce comments, which do not affect tree hierarchy.
+1. DOM part processing instruction API creates DOM parts.
+   1. **Some HTML-compliant serializers cannot produce processing instructions**
+   1. There is no new document mode to parse DOM parts.
+   1. There is only one processing instruction syntax.
+   1. **Processing instructions are not valid inside tags**
+   1. _Processing instructions are arguably not ergonomic_
+   1. _DOM parts would enable such other APIs, but does not propose them._
+1. DOM parts includes an imperative API.
+
 ### Overview
 
-Processing instructions will allow caching nodes of interest during parsing. An imperative API will allow maintaining a live tree of nodes of interest in the DOM. The imperative API is a modification/addition to the original [DOM Parts proposal](https://github.com/WICG/webcomponents/blob/gh-pages/proposals/DOM-Parts.md). For information on how this proopsal differs from the original DOM Parts proposal, [see this explainer](./dom_parts_differences.md). For information about the polyfill, [see this explainer](./polyfill.md).
+Processing instructions will allow caching nodes of interest during parsing. An imperative API will allow maintaining a live tree of nodes of interest in the DOM. The imperative API is a modification/addition to the original [DOM Parts proposal](https://github.com/WICG/webcomponents/blob/gh-pages/proposals/DOM-Parts.md). For information on how this proposal differs from the original DOM Parts proposal, [see this explainer](./dom_parts_differences.md). For information about the polyfill, [see this explainer](./polyfill.md).
 
 ### Processing Instructions
 
