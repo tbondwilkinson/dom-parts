@@ -41,9 +41,9 @@ The browser could assist in locating, storing, and updating these nodes with new
 - **React**: A component may not be rooted with a single element root and may instead be rooted with 0 or more top-level nodes. No way to represent this in HTML and get behaviors like event listening, DOM measurement.
 - **Wiz (Google Internal)**: Component ownership may skip into child components (comparable to `<template>` slots).
 
-## Requirements
+## Potential Requirements
 
-These are the requirements for a new browser API that solved the above use cases:
+These are the potential requirements for a new browser API that solved the above use cases:
 
 1. Markers are preserved and cloned with a DOM clone.
 1. Markers are preserved after DOM mutations.
