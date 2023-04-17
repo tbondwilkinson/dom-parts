@@ -236,3 +236,16 @@ class ChildNodePart implements Part, PartRoot {
 Invalid `ChildNodePart` objects are still accessible in with `getParts()`, but never have children.
 
 Unlike `NodePart`, `ChildNodePart` is also a `PartRoot` like a `Document` or `DocumentFragment`. This means that it can contain content and nodes, and can be a `PartRoot` for other parts.
+
+## FAQ
+
+### Processing Instruction Alternatives
+
+Processing instructions have some drawbacks as well. The major drawback is that they are not commonly output by HTML generating libraries, and so it may be a challenge for adoption in those libraries.
+
+Additionally processing instructions cannot be output inside tags, so possible extensions like attribute parts are more difficult to express.
+
+Alternatives to processing instructions considered:
+
+1. Comments with specific structure. These could be used in place of processing instructions but are not valid inside tags.
+1. A new special character, for example `{}` that could be specially parsed in a document mode. This comes with all the drawbacks of complexity for a new document mode.
