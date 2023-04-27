@@ -13,22 +13,16 @@ The browser could assist in locating, storing, and updating these nodes with new
 
 **Summary of Use Cases**
 
-**Template-based Client-side Rendering**: Locating nodes in cloned HTML
+**Template-based Client-side Rendering**: Locating and updating nodes in cloned `<template>` HTML
 
 - **Lit**: Visits placeholders in `<template>` cloned content.
 - **SolidJS**: Visits placeholders in `<template>` cloned content.
 - **Angular**: Interested in Lit + SolidJS approach
 - **Wiz (Google Internal)**: Interested in Lit + SolidJS approach
 
-**Updating DOM with new data**: With a list of nodes, walks just the tree of nodes that need to be updated and fills them with data
+**Server-side Rendering and Hydration**: Locating and updating nodes in main document HTML
 
-- **Lit**: Visits cached parts of the DOM
-- **Wiz (Google Internal)**: Idom could walk just nodes that need to change, rather than the entire tree.
-- **Vue, Svelte, React, others**: Most frameworks preserve a node pointer and use that to update content.
-
-**Server-side Rendering**: Locating nodes in main document HTML
-
-- **Hydration (Vue, Svelte)**: Needs to visit DOM nodes to add event listeners, then same use case as template-based client-side rendering. Some frameworks like Qwik only hydrate parts of the page that have interaction.
+- **Vue, Svelte, others**: Needs to visit DOM nodes to add event listeners, then same use case as template-based client-side rendering. Some frameworks like Qwik only hydrate parts of the page that have interaction.
 - **Wiz (Google Internal)**: Locates jscontroller tagged nodes. Locates jsname tagged nodes for jscontrollers.
 
 **Deferred Server-side Rendering**: Declaratively marking locations to be used to later slot in content.
@@ -45,26 +39,47 @@ The browser could assist in locating, storing, and updating these nodes with new
 
 These are the potential requirements for a new browser API that solved the above use cases:
 
-1. Markers are preserved and cloned with a DOM clone.
-1. Markers are preserved after DOM mutations.
-1. Markers are fast to find using an imperative API.
-1. Markers enable updates to the DOM that are fast.
+1. Markers do not affect rendering.
+1. Markers do not affect tree hierarchy.
 1. Markers can mark a single node.
-1. Markers can mark a range of characters within a node.
-1. Markers can mark a range of sibling nodes.
+1. Markers can mark a range of nodes.
 1. Markers can mark attributes.
 1. Markers can mark a range of characters within an attribute.
 1. Markers can be nested and have hierarchy, and have 1 parent and 0 or more children.
-1. Markers do not affect rendering.
-1. Markers do not affect tree hierarchy.
+1. Markers are performantly preserved after a DOM clone.
+1. Markers are performantly preserved after DOM mutations.
+1. Markers are fast to find using an imperative API.
+1. Markers can be imperatively created with JavaScript.
 1. Markers can be declaratively created with HTML.
+   1. The HTML to create a marker does not require a new document parsing mode to parse.
    1. The HTML to create a marker must be emittable by servers using HTML-compliant serializers.
-   1. The HTML to create a marker must not introduce a new document mode for HTML.
-   1. There should be only one syntax for declaratively creating a marker.
    1. The HTML to create a marker is "universal", and can be output inside or outside of tags.
    1. The HTML to create a marker is ergonomic and directly writable by developers.
-   1. The browser can use declaratively created HTML markers for other APIs, such as deferred DOM.
-1. Markers can be imperatively created with JavaScript.
+   1. There should be only one syntax for declaratively creating a marker.
+1. Browsers can use markers for deferred DOM insertion.
+1. Browsers can use markers for component features like event listening.
+
+## Use Cases vs Requirements
+
+| Requirement                   | CSR | SSR | Deferred DOM | Declarative CE | Component |
+| ----------------------------- | --- | --- | ------------ | -------------- | --------- |
+| Do not affect rendering       | X   | X   | X            | X              | X         |
+| Do not affect tree hierarchy  | X   | X   | X            | X              | X         |
+| Mark a single node            | X   | X   | X            | X              | X         |
+| Mark a range of nodes         | X   | X   | X            | X              | X         |
+| Mark attributes               | ~   | ~   |              | ~              |           |
+| Mark text in attributes       | ~   | ~   |              | ~              |           |
+| Markers have hierarchy        | X   | X   |              | X              | X         |
+| Preserved after clone         | X   |     |              |                |           |
+| Preserved after DOM mutations | X   | X   | X            | X              | X         |
+| Performant to retrieve in JS  | X   | X   |              | ~              | X         |
+| Imperative syntax             | X   |     |              | ~              |           |
+| Declarative syntax            |     | X   | X            | X              | X         |
+| > No new document mode        | X   | X   | X            | X              | X         |
+| > Marker is valid HTML        | X   | X   | X            | X              | X         |
+| > Marker in place             |     |     |              |                |           |
+| > Ergonomic syntax            | ~   | ~   | ~            | ~              | ~         |
+| > One syntax                  |     |     |              |                |           |
 
 ## Proposal
 
