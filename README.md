@@ -1,3 +1,5 @@
+> **THIS REPOSITORY IS NOW ARCHIVED. ALL DOM PARTS WORK IS BEING DONE IN https://github.com/WICG/webcomponents**
+
 # DOM Parts Proposal
 
 ## Uses Cases
